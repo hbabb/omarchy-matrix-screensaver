@@ -7,6 +7,8 @@ A fork of [Omarchy](https://github.com/basecamp/omarchy)'s screensaver system
 that is *only* the Matrix digital-rain "waterfall," in the original movie
 green, plus an idle/lock/blank/sleep timing setup to go with it:
 
+![Matrix screensaver running](docs/demo.gif)
+
 - **10 min** idle &rarr; screensaver starts
 - **+30 min** &rarr; lock screen (40 min total)
 - **+15 min** &rarr; display blanks (DPMS off, 55 min total)
