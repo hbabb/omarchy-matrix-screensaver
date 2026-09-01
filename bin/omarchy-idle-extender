@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# omarchy-idle-extender
+#
+# Adds two stages on top of Omarchy's native screensaver+lock idle cycle
+# (configured in ~/.config/omarchy/shell.json as idle.screensaver /
+# idle.lock), which only handles those first two stages:
+#
+#   1. screen blank (DPMS off) a fixed time after the *lock* stage
+#   2. AC/battery-aware sleep:
+#        - on AC power: stay locked + blanked, awake, until a much longer
+#          total-inactivity threshold, then suspend
+#        - on battery: suspend immediately at the same point AC would only
+#          blank, to save power
+#
+# The top-bar "Stay Awake" toggle and Hyprland's idle inhibitors (fullscreen
+# games, video calls, etc.) are already respected for free: this script only
+# starts counting once Omarchy's own idle cycle -- which already honors both
+# -- has put the session into a locked state (via `omarchy-shell lock
+# status`), so anything that prevents the native idle cycle from firing
+# prevents this script from doing anything too.
+
+set -u
+
+SCREENSAVER_SECONDS=600        # keep in sync with idle.screensaver in shell.json
+BLANK_AFTER_SECONDS=3300       # 55 min since last activity (10+30+15 min)
+AC_SLEEP_AFTER_SECONDS=18000   # 5 hours since last activity
+POLL_INTERVAL=15
+
+t0=""
+blanked=false
+slept=false
+
+dpms_off() { hyprctl dispatch 'hl.dsp.dpms({ action = "disable" })' >/dev/null 2>&1; }
+dpms_on()  { hyprctl dispatch 'hl.dsp.dpms({ action = "enable" })' >/dev/null 2>&1; }
+
+reset_cycle() {
+  t0=""
+  blanked=false
+  slept=false
+}
+
+while true; do
+  in_cycle=$(omarchy-shell idle status 2>/dev/null | jq -r '.inIdleCycle // false' 2>/dev/null)
+  secure=$(omarchy-shell lock status 2>/dev/null | jq -r '.secure // false' 2>/dev/null)
+
+  if [[ $secure == true ]]; then
+    # Anchor t0 to when idling actually began (captured below, while still
+    # pre-lock). If we somehow missed that window -- e.g. this service just
+    # started while already locked, or the session was locked manually --
+    # fall back to "as if idle started one screensaver-interval ago" so we
+    # still degrade safely instead of blanking/sleeping instantly.
+    [[ -n $t0 ]] || t0=$(( $(date +%s) - SCREENSAVER_SECONDS ))
+
+    elapsed=$(( $(date +%s) - t0 ))
+
+    if [[ $blanked == false && $elapsed -ge $BLANK_AFTER_SECONDS ]]; then
+      blanked=true
+      if omarchy-power-present; then
+        dpms_off
+      else
+        systemctl suspend
+        slept=true
+      fi
+    fi
+
+    if [[ $blanked == true && $slept == false ]] && omarchy-power-present \
+       && [[ $elapsed -ge $AC_SLEEP_AFTER_SECONDS ]]; then
+      slept=true
+      systemctl suspend
+    fi
+  elif [[ $in_cycle == true ]]; then
+    # Idling, not locked yet -- remember when it started so the blank/sleep
+    # clock (measured from last activity, not from lock time) stays correct
+    # once the native lock stage fires.
+    [[ -n $t0 ]] || t0=$(( $(date +%s) - SCREENSAVER_SECONDS ))
+  else
+    # Active and unlocked: nothing pending. If we'd blanked the display
+    # ourselves, make sure it's back on (input already does this natively,
+    # but a "Stay Awake" toggle click isn't physical input).
+    if [[ $blanked == true ]]; then dpms_on; fi
+    reset_cycle
+  fi
+
+  sleep "$POLL_INTERVAL"
+done
