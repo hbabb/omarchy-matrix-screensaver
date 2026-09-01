@@ -1,5 +1,8 @@
 # omarchy-matrix-screensaver
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Built for Omarchy](https://img.shields.io/badge/built%20for-Omarchy-1e1e2e.svg)](https://omarchy.org)
+
 A fork of [Omarchy](https://github.com/basecamp/omarchy)'s screensaver system
 that is *only* the Matrix digital-rain "waterfall," in the original movie
 green, plus an idle/lock/blank/sleep timing setup to go with it:
